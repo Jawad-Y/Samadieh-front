@@ -1,15 +1,14 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Noto_Sans_Arabic } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from 'sonner'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const arabicFont = Noto_Sans_Arabic({ subsets: ['arabic'] })
 
 export const metadata: Metadata = {
-  title: 'Samadiyyah - Community Pools',
-  description: 'Create and manage Samadiyyah pools. Contribute to community goals and reach 100,000 together.',
+  title: 'صمدية - مجمعات المجتمع',
+  description: 'أنشئ مجمعات صمدية وأدرها. ساهم في أهداف المجتمع وحققوا 100,000 معًا.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -36,8 +35,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="bg-background">
-      <body className="font-sans antialiased">
+    <html lang="ar" dir="rtl" className="bg-background">
+      <body className={`${arabicFont.className} font-sans antialiased`}>
         {children}
         <Toaster />
         {process.env.NODE_ENV === 'production' && <Analytics />}

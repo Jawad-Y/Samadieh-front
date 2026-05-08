@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Heart } from 'lucide-react'
 import { toast } from 'sonner'
+import { register } from '@/lib/api'
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
@@ -21,67 +22,59 @@ export default function RegisterPage() {
     e.preventDefault()
     
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match')
+      toast.error('كلمتا المرور غير متطابقتين')
       return
     }
 
     if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+      toast.error('يجب ألا تقل كلمة المرور عن 6 أحرف')
       return
     }
 
     setLoading(true)
 
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+      const data = await register(email, password)
 
-      const data = await response.json()
-
-      if (response.ok) {
-        toast.success('Account created successfully!')
-        // Store the token and user info
-        localStorage.setItem('supabase_auth_token', data.session.access_token)
-        localStorage.setItem('supabase_user', JSON.stringify(data.user))
+      if (data.session) {
+        toast.success('تم إنشاء الحساب بنجاح')
         router.push('/dashboard')
       } else {
-        toast.error(data.error || 'Failed to register')
+        toast.success('تم إنشاء الحساب. تحقق من بريدك الإلكتروني لتأكيد الحساب.')
+        router.push('/auth/login')
       }
     } catch (error) {
       console.error('Register error:', error)
-      toast.error('An error occurred. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'حدث خطأ. حاول مرة أخرى.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-rose-50 flex items-center justify-center px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-blue-50 to-rose-50 px-4 py-8">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Heart className="h-8 w-8 text-rose-500" />
-            <h1 className="text-3xl font-bold">Samadiyyah</h1>
+            <h1 className="text-3xl font-bold">صمدية</h1>
           </div>
-          <p className="text-gray-600">Community Pools</p>
+          <p className="text-gray-600">مجمعات المجتمع</p>
         </div>
 
         {/* Register Card */}
         <Card className="border-0 shadow-lg">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl">Get Started</CardTitle>
+            <CardTitle className="text-2xl">ابدأ الآن</CardTitle>
             <CardDescription>
-              Create an account to start managing pools
+              أنشئ حسابًا للبدء في إدارة المجمعات
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">البريد الإلكتروني</Label>
                 <Input
                   id="email"
                   type="email"
@@ -93,7 +86,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">كلمة المرور</Label>
                 <Input
                   id="password"
                   type="password"
@@ -103,10 +96,10 @@ export default function RegisterPage() {
                   required
                   disabled={loading}
                 />
-                <p className="text-xs text-gray-500">At least 6 characters</p>
+                <p className="text-xs text-gray-500">6 أحرف على الأقل</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Label htmlFor="confirm-password">تأكيد كلمة المرور</Label>
                 <Input
                   id="confirm-password"
                   type="password"
@@ -122,14 +115,14 @@ export default function RegisterPage() {
                 className="w-full" 
                 disabled={loading}
               >
-                {loading ? 'Creating account...' : 'Create Account'}
+                {loading ? 'جارٍ إنشاء الحساب...' : 'إنشاء الحساب'}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
-              <span className="text-gray-600">Already have an account? </span>
+              <span className="text-gray-600">لديك حساب بالفعل؟ </span>
               <Link href="/auth/login" className="font-semibold text-blue-600 hover:text-blue-700">
-                Sign in
+                سجّل الدخول
               </Link>
             </div>
           </CardContent>
@@ -137,7 +130,7 @@ export default function RegisterPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-gray-500 mt-8">
-          By creating an account, you agree to our Terms of Service and Privacy Policy
+          بإنشاء حساب، فإنك توافق على شروط الخدمة وسياسة الخصوصية
         </p>
       </div>
     </div>

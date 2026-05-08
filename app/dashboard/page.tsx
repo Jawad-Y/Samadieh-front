@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Navigation from '@/components/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,13 +25,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Plus, Copy, Share2, Trash2, Edit2, Lock, Unlock, TrendingUp } from 'lucide-react'
+import { ImagePlus, Plus, Share2, Trash2, Lock, Unlock, TrendingUp } from 'lucide-react'
+import { createPool, deletePool, getCurrentUser, getMyPools, updatePool, uploadPoolPhoto } from '@/lib/api'
 
 interface Pool {
   id: string
   owner_id: string
   title: string
   description: string
+  photo_url?: string | null
+  photo_path?: string | null
   share_token: string
   status: 'draft' | 'published' | 'archived'
   goal_amount: string
@@ -49,6 +51,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [isOpen, setIsOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [uploadingPoolId, setUploadingPoolId] = useState<string | null>(null)
   const router = useRouter()
 
   // Form state
@@ -57,34 +60,30 @@ export default function DashboardPage() {
   const [status, setStatus] = useState('draft')
 
   useEffect(() => {
-    // Check if user is logged in
-    const token = localStorage.getItem('supabase_auth_token')
-    if (!token) {
-      router.push('/auth/login')
-      return
+    const checkAndFetch = async () => {
+      const user = await getCurrentUser()
+      if (!user) {
+        router.push('/auth/login')
+        return
+      }
+      fetchPools()
     }
-    fetchPools()
+
+    checkAndFetch()
   }, [router])
 
   const fetchPools = async () => {
     try {
-      const token = localStorage.getItem('supabase_auth_token')
-      const response = await fetch('/api/pools/mine', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setPools(data)
-      } else if (response.status === 401) {
+      const data = await getMyPools()
+      setPools(data)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Unauthorized') {
         localStorage.removeItem('supabase_auth_token')
         router.push('/auth/login')
+      } else {
+        console.error('Failed to fetch pools:', error)
+        toast.error('تعذر تحميل المجمعات')
       }
-    } catch (error) {
-      console.error('Failed to fetch pools:', error)
-      toast.error('Failed to load pools')
     } finally {
       setLoading(false)
     }
@@ -94,42 +93,28 @@ export default function DashboardPage() {
     e.preventDefault()
 
     if (!title.trim()) {
-      toast.error('Pool title is required')
+      toast.error('عنوان المجمع مطلوب')
       return
     }
 
     setIsCreating(true)
 
     try {
-      const token = localStorage.getItem('supabase_auth_token')
-      const response = await fetch('/api/pools', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          status,
-        }),
+      const data = await createPool({
+        title: title.trim(),
+        description: description.trim(),
+        status: status as 'draft' | 'published',
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        toast.success('Pool created successfully!')
-        setPools([data, ...pools])
-        setTitle('')
-        setDescription('')
-        setStatus('draft')
-        setIsOpen(false)
-      } else {
-        toast.error(data.error || 'Failed to create pool')
-      }
+      toast.success('تم إنشاء المجمع بنجاح')
+      setPools([data, ...pools])
+      setTitle('')
+      setDescription('')
+      setStatus('draft')
+      setIsOpen(false)
     } catch (error) {
       console.error('Create pool error:', error)
-      toast.error('An error occurred. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'حدث خطأ. حاول مرة أخرى.')
     } finally {
       setIsCreating(false)
     }
@@ -137,59 +122,48 @@ export default function DashboardPage() {
 
   const handlePublishPool = async (poolId: string) => {
     try {
-      const token = localStorage.getItem('supabase_auth_token')
-      const response = await fetch(`/api/pools/${poolId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: 'published' }),
-      })
-
-      if (response.ok) {
-        const updatedPool = await response.json()
-        setPools(pools.map(p => p.id === poolId ? updatedPool : p))
-        toast.success('Pool published successfully!')
-      } else {
-        toast.error('Failed to publish pool')
-      }
+      const updatedPool = await updatePool(poolId, { status: 'published' })
+      setPools(pools.map(p => p.id === poolId ? updatedPool : p))
+      toast.success('تم نشر المجمع بنجاح')
     } catch (error) {
       console.error('Publish error:', error)
-      toast.error('An error occurred')
+      toast.error(error instanceof Error ? error.message : 'حدث خطأ')
     }
   }
 
   const handleDeletePool = async (poolId: string) => {
-    if (!confirm('Are you sure you want to delete this pool? This action cannot be undone.')) {
+    if (!confirm('هل أنت متأكد من حذف هذا المجمع؟ لا يمكن التراجع عن هذا الإجراء.')) {
       return
     }
 
     try {
-      const token = localStorage.getItem('supabase_auth_token')
-      const response = await fetch(`/api/pools/${poolId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        setPools(pools.filter(p => p.id !== poolId))
-        toast.success('Pool deleted successfully')
-      } else {
-        toast.error('Failed to delete pool')
-      }
+      await deletePool(poolId)
+      setPools(pools.filter(p => p.id !== poolId))
+      toast.success('تم حذف المجمع بنجاح')
     } catch (error) {
       console.error('Delete error:', error)
-      toast.error('An error occurred')
+      toast.error(error instanceof Error ? error.message : 'حدث خطأ')
     }
   }
 
   const copyShareLink = (shareToken: string) => {
     const shareUrl = `${window.location.origin}/pool/${shareToken}`
     navigator.clipboard.writeText(shareUrl)
-    toast.success('Share link copied to clipboard!')
+    toast.success('تم نسخ رابط المشاركة')
+  }
+
+  const handleUploadPhoto = async (poolId: string, file: File) => {
+    try {
+      setUploadingPoolId(poolId)
+      const result = await uploadPoolPhoto(poolId, file)
+      setPools((prev) => prev.map((pool) => (pool.id === poolId ? { ...pool, ...result.pool } : pool)))
+      toast.success('تم رفع صورة المجمع بنجاح')
+    } catch (error) {
+      console.error('Upload photo error:', error)
+      toast.error(error instanceof Error ? error.message : 'تعذر رفع الصورة')
+    } finally {
+      setUploadingPoolId(null)
+    }
   }
 
   if (loading) {
@@ -197,7 +171,7 @@ export default function DashboardPage() {
       <div className="min-h-screen bg-background">
         <Navigation />
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-          <div className="text-center">Loading dashboard...</div>
+          <div className="text-center">جارٍ تحميل لوحة التحكم...</div>
         </div>
       </div>
     )
@@ -213,32 +187,32 @@ export default function DashboardPage() {
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Your Pools</h1>
-            <p className="text-gray-600 mt-2">Create and manage your Samadiyyah pools</p>
+            <h1 className="text-3xl font-bold">مجمعاتك</h1>
+            <p className="mt-2 text-gray-600">أنشئ وادِر مجمعات صمدية الخاصة بك</p>
           </div>
           
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-              <Button size="lg" className="mt-4 sm:mt-0">
-                <Plus className="h-4 w-4 mr-2" />
-                New Pool
+              <Button size="lg" className="w-full sm:w-auto">
+                <Plus className="h-4 w-4 ml-2" />
+                مجمع جديد
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create New Pool</DialogTitle>
+                <DialogTitle>إنشاء مجمع جديد</DialogTitle>
                 <DialogDescription>
-                  Create a new Samadiyyah pool with a goal of 100,000
+                  أنشئ مجمعًا جديدًا لصمدية بهدف 100,000
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreatePool} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="title">Pool Title</Label>
+                  <Label htmlFor="title">عنوان المجمع</Label>
                   <Input
                     id="title"
-                    placeholder="e.g., Ramadan Samadiyyah"
+                    placeholder="مثال: مجمع رمضان"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     required
@@ -246,29 +220,29 @@ export default function DashboardPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="description">Description (Optional)</Label>
+                  <Label htmlFor="description">الوصف (اختياري)</Label>
                   <Textarea
                     id="description"
-                    placeholder="Describe the purpose of this pool..."
+                    placeholder="صف هدف هذا المجمع..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     disabled={isCreating}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="status">Initial Status</Label>
+                  <Label htmlFor="status">الحالة المبدئية</Label>
                   <Select value={status} onValueChange={setStatus} disabled={isCreating}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="draft">Draft (Private)</SelectItem>
-                      <SelectItem value="published">Published (Public)</SelectItem>
+                      <SelectItem value="draft">مسودة (خاص)</SelectItem>
+                      <SelectItem value="published">منشور (عام)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <Button type="submit" className="w-full" disabled={isCreating}>
-                  {isCreating ? 'Creating...' : 'Create Pool'}
+                  {isCreating ? 'جارٍ الإنشاء...' : 'إنشاء المجمع'}
                 </Button>
               </form>
             </DialogContent>
@@ -276,10 +250,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid md:grid-cols-3 gap-4 mb-12">
+        <div className="mb-12 grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Pools</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">إجمالي المجمعات</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">{pools.length}</p>
@@ -287,7 +261,7 @@ export default function DashboardPage() {
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Active Pools</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">المجمعات النشطة</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">{publishedPools.length}</p>
@@ -295,7 +269,7 @@ export default function DashboardPage() {
           </Card>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Drafts</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">المسودات</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold">{draftPools.length}</p>
@@ -306,11 +280,11 @@ export default function DashboardPage() {
         {/* Published Pools */}
         {publishedPools.length > 0 && (
           <section className="mb-12">
-            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold">
               <Unlock className="h-5 w-5 text-green-600" />
-              Published Pools
+              المجمعات المنشورة
             </h2>
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid gap-6 md:grid-cols-2">
               {publishedPools.map((pool) => (
                 <PoolCard
                   key={pool.id}
@@ -318,6 +292,8 @@ export default function DashboardPage() {
                   onPublish={() => {}}
                   onDelete={() => handleDeletePool(pool.id)}
                   onCopyLink={() => copyShareLink(pool.share_token)}
+                  onUploadPhoto={(file) => handleUploadPhoto(pool.id, file)}
+                  uploading={uploadingPoolId === pool.id}
                 />
               ))}
             </div>
@@ -327,11 +303,11 @@ export default function DashboardPage() {
         {/* Draft Pools */}
         {draftPools.length > 0 && (
           <section className="mb-12">
-            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold">
               <Lock className="h-5 w-5 text-yellow-600" />
-              Draft Pools
+              المجمعات المسودة
             </h2>
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid gap-6 md:grid-cols-2">
               {draftPools.map((pool) => (
                 <PoolCard
                   key={pool.id}
@@ -339,6 +315,31 @@ export default function DashboardPage() {
                   onPublish={() => handlePublishPool(pool.id)}
                   onDelete={() => handleDeletePool(pool.id)}
                   onCopyLink={() => copyShareLink(pool.share_token)}
+                  onUploadPhoto={(file) => handleUploadPhoto(pool.id, file)}
+                  uploading={uploadingPoolId === pool.id}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Archived Pools */}
+        {archivedPools.length > 0 && (
+          <section className="mb-12">
+            <h2 className="mb-6 flex items-center gap-2 text-2xl font-bold">
+              <Trash2 className="h-5 w-5 text-gray-500" />
+              المجمعات المؤرشفة
+            </h2>
+            <div className="grid gap-6 md:grid-cols-2">
+              {archivedPools.map((pool) => (
+                <PoolCard
+                  key={pool.id}
+                  pool={pool}
+                  onPublish={() => {}}
+                  onDelete={() => handleDeletePool(pool.id)}
+                  onCopyLink={() => copyShareLink(pool.share_token)}
+                  onUploadPhoto={(file) => handleUploadPhoto(pool.id, file)}
+                  uploading={uploadingPoolId === pool.id}
                 />
               ))}
             </div>
@@ -349,13 +350,13 @@ export default function DashboardPage() {
         {pools.length === 0 && (
           <Card className="text-center py-12">
             <TrendingUp className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No pools yet</h3>
-            <p className="text-gray-600 mb-6">Create your first Samadiyyah pool to get started</p>
+            <h3 className="mb-2 text-xl font-semibold">لا توجد مجمعات بعد</h3>
+            <p className="mb-6 text-gray-600">أنشئ أول مجمع لصمدية للبدء</p>
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
               <DialogTrigger asChild>
                 <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Pool
+                  <Plus className="h-4 w-4 ml-2" />
+                  إنشاء مجمع
                 </Button>
               </DialogTrigger>
               <DialogContent>
@@ -417,15 +418,26 @@ interface PoolCardProps {
   onPublish: () => void
   onDelete: () => void
   onCopyLink: () => void
+  onUploadPhoto: (file: File) => void
+  uploading: boolean
 }
 
-function PoolCard({ pool, onPublish, onDelete, onCopyLink }: PoolCardProps) {
+function PoolCard({ pool, onPublish, onDelete, onCopyLink, onUploadPhoto, uploading }: PoolCardProps) {
   const totalAmount = parseFloat(pool.total_amount)
   const goalAmount = parseFloat(pool.goal_amount)
   const progressPercent = (totalAmount / goalAmount) * 100
 
   return (
     <Card>
+      {pool.photo_url ? (
+        <div className="px-6 pt-6">
+          <img
+            src={pool.photo_url}
+            alt={`${pool.title} photo`}
+            className="h-40 w-full rounded-md object-cover"
+          />
+        </div>
+      ) : null}
       <CardHeader>
         <CardTitle className="line-clamp-2">{pool.title}</CardTitle>
         <CardDescription className="line-clamp-2">
@@ -436,7 +448,7 @@ function PoolCard({ pool, onPublish, onDelete, onCopyLink }: PoolCardProps) {
         {/* Progress */}
         <div>
           <div className="flex justify-between text-sm mb-2">
-            <span className="text-gray-600">Progress</span>
+            <span className="text-gray-600">التقدم</span>
             <span className="font-semibold">{progressPercent.toFixed(2)}%</span>
           </div>
           <Progress value={progressPercent} className="h-2" />
@@ -448,7 +460,7 @@ function PoolCard({ pool, onPublish, onDelete, onCopyLink }: PoolCardProps) {
             {totalAmount.toLocaleString()} / {goalAmount.toLocaleString()}
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            {(goalAmount - totalAmount).toLocaleString()} remaining
+            المتبقي {(goalAmount - totalAmount).toLocaleString()}
           </p>
         </div>
 
@@ -461,34 +473,59 @@ function PoolCard({ pool, onPublish, onDelete, onCopyLink }: PoolCardProps) {
               ? 'bg-yellow-100 text-yellow-800'
               : 'bg-gray-100 text-gray-800'
           }`}>
-            {pool.status.charAt(0).toUpperCase() + pool.status.slice(1)}
+            {pool.status === 'published'
+              ? 'منشور'
+              : pool.status === 'draft'
+              ? 'مسودة'
+              : 'مؤرشف'}
           </span>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 pt-4">
+        <div className="flex flex-wrap gap-2 pt-4">
           {pool.status === 'draft' && (
             <Button
               size="sm"
               variant="outline"
-              className="flex-1"
+              className="flex-1 gap-2"
               onClick={onPublish}
             >
-              <Unlock className="h-4 w-4 mr-1" />
-              Publish
+              <Unlock className="h-4 w-4" />
+              نشر
             </Button>
           )}
           {pool.status === 'published' && (
             <Button
               size="sm"
               variant="outline"
-              className="flex-1"
+              className="flex-1 gap-2"
               onClick={onCopyLink}
             >
-              <Share2 className="h-4 w-4 mr-1" />
-              Share
+              <Share2 className="h-4 w-4" />
+              مشاركة
             </Button>
           )}
+          <label>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) {
+                  onUploadPhoto(file)
+                }
+                event.currentTarget.value = ''
+              }}
+              disabled={uploading}
+            />
+            <Button size="sm" variant="outline" asChild disabled={uploading}>
+              <span className="flex items-center gap-2">
+                <ImagePlus className="h-4 w-4" />
+                {uploading ? 'جارٍ الرفع...' : 'صورة'}
+              </span>
+            </Button>
+          </label>
           <Button
             size="sm"
             variant="destructive"

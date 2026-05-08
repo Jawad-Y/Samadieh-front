@@ -12,33 +12,76 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Heart, Menu, LogOut } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { getCurrentUser, logout } from '@/lib/api'
+import { toast } from 'sonner'
+import { supabase } from '@/lib/supabase'
+
+interface User {
+  email?: string | null
+}
 
 export default function Navigation() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
     setMounted(true)
-    // Check if user is logged in from localStorage
-    const userStr = localStorage.getItem('supabase_user')
-    if (userStr) {
-      try {
-        const userData = JSON.parse(userStr)
-        setUser(userData)
-      } catch (error) {
-        console.error('Failed to parse user data:', error)
+
+    let isActive = true
+
+    const loadUser = async () => {
+      const currentUser = await getCurrentUser()
+      if (!isActive) return
+      setUser(currentUser)
+
+      if (currentUser) {
+        localStorage.setItem('supabase_user', JSON.stringify(currentUser))
+      } else {
+        localStorage.removeItem('supabase_user')
+        localStorage.removeItem('supabase_auth_token')
       }
+    }
+
+    loadUser()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!isActive) return
+      const nextUser = session?.user ?? null
+      setUser(nextUser)
+
+      if (nextUser) {
+        localStorage.setItem('supabase_user', JSON.stringify(nextUser))
+        if (session?.access_token) {
+          localStorage.setItem('supabase_auth_token', session.access_token)
+        }
+      } else {
+        localStorage.removeItem('supabase_user')
+        localStorage.removeItem('supabase_auth_token')
+      }
+    })
+
+    return () => {
+      isActive = false
+      subscription.unsubscribe()
     }
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('supabase_auth_token')
-    localStorage.removeItem('supabase_user')
-    setUser(null)
-    setIsOpen(false)
-    router.push('/')
+  const handleLogout = async () => {
+    try {
+      await logout()
+      setUser(null)
+      setIsOpen(false)
+      router.push('/')
+      router.refresh()
+      toast.success('تم تسجيل الخروج')
+    } catch (err) {
+      console.error('Logout error:', err)
+      toast.error('تعذر تسجيل الخروج')
+    }
   }
 
   if (!mounted) {
@@ -48,23 +91,23 @@ export default function Navigation() {
   return (
     <nav className="border-b bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex h-auto items-center justify-between gap-4 py-4 sm:h-16 sm:py-0">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 font-bold text-xl">
             <Heart className="h-6 w-6 text-rose-500" />
-            <span className="hidden sm:inline">Samadiyyah</span>
+            <span className="hidden sm:inline">صمدية</span>
           </Link>
 
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center gap-6">
             <Link href="/" className="text-gray-600 hover:text-gray-900 transition">
-              Pools
+              المجمعات
             </Link>
             
             {user ? (
               <>
                 <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition">
-                  Dashboard
+                  لوحة التحكم
                 </Link>
                 <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                   <DropdownMenuTrigger asChild>
@@ -79,15 +122,15 @@ export default function Navigation() {
                     <Separator />
                     <DropdownMenuItem asChild>
                       <Link href="/dashboard" className="cursor-pointer">
-                        Dashboard
+                        لوحة التحكم
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem 
                       onClick={handleLogout}
                       className="cursor-pointer text-red-600 focus:text-red-600"
                     >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Logout
+                      <LogOut className="h-4 w-4 ml-2" />
+                      تسجيل الخروج
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -95,10 +138,10 @@ export default function Navigation() {
             ) : (
               <>
                 <Link href="/auth/login">
-                  <Button variant="outline">Sign In</Button>
+                  <Button variant="outline">تسجيل الدخول</Button>
                 </Link>
                 <Link href="/auth/register">
-                  <Button>Get Started</Button>
+                  <Button>ابدأ الآن</Button>
                 </Link>
               </>
             )}
@@ -116,7 +159,7 @@ export default function Navigation() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem asChild>
                     <Link href="/dashboard" className="cursor-pointer">
-                      Dashboard
+                      لوحة التحكم
                     </Link>
                   </DropdownMenuItem>
                   <Separator />
@@ -124,8 +167,8 @@ export default function Navigation() {
                     onClick={handleLogout}
                     className="cursor-pointer text-red-600 focus:text-red-600"
                   >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
+                    <LogOut className="h-4 w-4 ml-2" />
+                    تسجيل الخروج
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -139,12 +182,12 @@ export default function Navigation() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem asChild>
                     <Link href="/auth/login" className="cursor-pointer">
-                      Sign In
+                      تسجيل الدخول
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/auth/register" className="cursor-pointer">
-                      Get Started
+                      ابدأ الآن
                     </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
