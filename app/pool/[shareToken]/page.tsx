@@ -103,12 +103,17 @@ export default function PoolPage() {
       return
     }
 
+    if (!label || label.trim() === '') {
+      toast.error('يجب إدخال اسم المساهم')
+      return
+    }
+
     setSubmitting(true)
 
     try {
       const data = await contributeToPool(shareToken, {
         amount: parseFloat(amount),
-        contributor_label: label || 'مجهول',
+        contributor_label: label.trim(),
         note: note || '',
       })
       toast.success('تم إرسال المساهمة بنجاح')
@@ -372,14 +377,15 @@ export default function PoolPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="label">اسمك (اختياري)</Label>
+                    <Label htmlFor="label">اسمك <span className="text-red-500">*</span></Label>
                     <Input
                       id="label"
                       type="text"
-                      placeholder="مجهول"
+                      placeholder="أدخل اسمك"
                       value={label}
                       onChange={(e) => setLabel(e.target.value)}
                       disabled={submitting}
+                      required
                     />
                   </div>
 
